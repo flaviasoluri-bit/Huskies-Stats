@@ -410,18 +410,39 @@ function startListeners(){
     const val = snap.val();
     const arr = toArr(val);
     if(arr){ roster = arr; renderRoster(); }
+    else { fbSet('roster', roster); }
     setSyncStatus('online','● Live');
   }, err => { setSyncStatus('offline','✗ Offline — check Firebase rules'); });
+
+  // Init default team stats in Firebase if not set
+  get(ref(db,'currentTeam')).then(snap => {
+    if(!snap.exists()) fbSet('currentTeam', initTeamStats());
+  }).catch(()=>{});
   // current game (team stats, player stats, game info)
   onValue(ref(db,'currentTeam'), snap => {
     const val = snap.val();
     const arr = toArr(val);
-    if(arr){ currentTeamStats = arr; renderTeamStatTables(); }
+    if(arr && arr.length === 3){
+      // merge Firebase values into local initTeamStats structure to preserve period labels
+      const base = initTeamStats();
+      currentTeamStats = base.map((row, i) => {
+        const fb = arr[i] || {};
+        return { period: row.period, sf:+fb.sf||0, sa:+fb.sa||0, cf:+fb.cf||0, ca:+fb.ca||0, fow:+fb.fow||0, fol:+fb.fol||0, pen:+fb.pen||0 };
+      });
+    } else {
+      currentTeamStats = initTeamStats();
+    }
+    renderTeamStatTables();
   });
   onValue(ref(db,'currentPlayers'), snap => {
     const val = snap.val();
     const arr = toArr(val);
-    if(arr){ currentPlayerStats = arr; renderPlayerStatTable(); }
+    if(arr){
+      currentPlayerStats = arr.map(p => ({
+        name: p.name||'', g:+p.g||0, a:+p.a||0, s:+p.s||0, sc:+p.sc||0, tk:+p.tk||0, pm:+p.pm||0
+      }));
+    }
+    renderPlayerStatTable();
   });
   onValue(ref(db,'currentGameInfo'), snap => {
     const val = snap.val();
@@ -554,7 +575,7 @@ function teamAdj(ri,col,d){
   const el=document.getElementById(`ts-${ri}-${col}`);
   if(el) el.textContent=v;
   renderSplitTotals();
-  fbUpdate('currentTeam/'+ri,{[col]:v});
+  fbSet('currentTeam/'+ri, currentTeamStats[ri]);
 }
 function renderSplitTotals(){
   const t={};['sf','sa','cf','ca','fow','fol','pen'].forEach(c=>t[c]=currentTeamStats.reduce((s,r)=>s+(+r[c]||0),0));
