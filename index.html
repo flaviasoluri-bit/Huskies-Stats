@@ -400,20 +400,28 @@ async function fbUpdate(path, data){
 }
 
 // ── FIREBASE LISTENERS ────────────────────────────────────────────────────────
+// Convert Firebase object-with-numeric-keys back to array
+function toArr(val){ if(!val) return null; if(Array.isArray(val)) return val; return Object.keys(val).sort((a,b)=>+a-+b).map(k=>val[k]); }
+
 function startListeners(){
+  setSyncStatus('syncing','⟳ Connecting...');
   // roster
   onValue(ref(db,'roster'), snap => {
     const val = snap.val();
-    if(val){ roster = val; renderRoster(); }
-  });
+    const arr = toArr(val);
+    if(arr){ roster = arr; renderRoster(); }
+    setSyncStatus('online','● Live');
+  }, err => { setSyncStatus('offline','✗ Offline — check Firebase rules'); });
   // current game (team stats, player stats, game info)
   onValue(ref(db,'currentTeam'), snap => {
     const val = snap.val();
-    if(val){ currentTeamStats = val; renderTeamStatTables(); }
+    const arr = toArr(val);
+    if(arr){ currentTeamStats = arr; renderTeamStatTables(); }
   });
   onValue(ref(db,'currentPlayers'), snap => {
     const val = snap.val();
-    if(val){ currentPlayerStats = val; renderPlayerStatTable(); }
+    const arr = toArr(val);
+    if(arr){ currentPlayerStats = arr; renderPlayerStatTable(); }
   });
   onValue(ref(db,'currentGameInfo'), snap => {
     const val = snap.val();
@@ -549,7 +557,7 @@ function teamAdj(ri,col,d){
   fbUpdate('currentTeam/'+ri,{[col]:v});
 }
 function renderSplitTotals(){
-  const t={};['sf','sa','cf','ca','fow','fol','pen'].forEach(c=>t[c]=currentTeamStats.reduce((s,r)=>s+r[c],0));
+  const t={};['sf','sa','cf','ca','fow','fol','pen'].forEach(c=>t[c]=currentTeamStats.reduce((s,r)=>s+(+r[c]||0),0));
   document.getElementById('for-foot').innerHTML=`<tr class="for-total"><td>Total</td><td><strong>${t.sf}</strong></td><td><strong>${t.cf}</strong></td></tr>`;
   document.getElementById('against-foot').innerHTML=`<tr class="against-total"><td>Total</td><td><strong>${t.sa}</strong></td><td><strong>${t.ca}</strong></td></tr>`;
   document.getElementById('fo-foot').innerHTML=`<tr class="fo-total"><td>Total</td><td><strong>${t.fow}</strong></td><td><strong>${t.fol}</strong></td></tr>`;
