@@ -153,6 +153,13 @@ table.history-tbl tr:nth-child(even) td{background:#f5f8ff}
 .dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
 @media(max-width:600px){.dash-grid{grid-template-columns:1fr}}
 .metric-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:10px}
+.gl-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.gl-tile{border-radius:10px;padding:12px 6px;text-align:center;background:#EEF3FA;border:1.5px solid #D5DDE8}
+.gl-tile.key{background:#E7F3EC;border-color:#1E7A44}
+.gl-val{font-size:1.6rem;font-weight:900;color:#183868;line-height:1.1}
+.gl-tile.key .gl-val{color:#1E7A44}
+.gl-lbl{font-size:.64rem;font-weight:700;color:#5b6772;margin-top:4px}
+.gl-who{font-size:.82rem;font-weight:700;color:#183868;margin-bottom:10px}
 .metric-tile{border-radius:8px;padding:12px 8px;text-align:center}
 .metric-tile.good{background:#e8f5e9;border:1.5px solid #a5d6a7}
 .metric-tile.warn{background:#fff8e1;border:1.5px solid #ffe082}
@@ -261,6 +268,7 @@ table.games-table tr:nth-child(even) td{background:#f5f8ff}
 
   /* Charts */
   .chart-wrap{height:110px!important;position:relative!important}
+  #gd-players-inner{width:100%!important;height:210px!important}
   .chart-wrap-sm{height:85px!important;position:relative!important}
   canvas{max-width:100%!important;height:100%!important}
 
@@ -728,7 +736,7 @@ table.history-tbl tbody tr:hover td{background:#e8f0fd!important}
     <!-- player chart -->
     <div class="dash-card" style="margin-bottom:14px">
       <div class="dash-card-header">🥅 Goals & Assists by Player</div>
-      <div class="dash-card-body"><div class="chart-wrap"><canvas id="gd-chart-players"></canvas></div></div>
+      <div class="dash-card-body"><div id="gd-players-scroll"><div id="gd-players-inner" style="position:relative;height:270px;width:100%"><canvas id="gd-chart-players"></canvas></div></div></div>
     </div>
     <!-- notes -->
     <div class="card" id="gd-notes-card" style="display:none">
@@ -745,6 +753,14 @@ table.history-tbl tbody tr:hover td{background:#e8f0fd!important}
           <thead><tr><th>#</th><th>Player</th><th>Goals</th><th>Assists</th><th>Passes</th><th>Points</th></tr></thead>
           <tbody id="gd-player-body"></tbody>
         </table>
+      </div>
+    </div>
+    <!-- goalie -->
+    <div class="card" id="gd-goalie-card" style="display:none">
+      <div class="card-header"><span class="dot"></span>Goalie</div>
+      <div class="card-body">
+        <div class="gl-who" id="gd-goalie-who"></div>
+        <div class="gl-grid" id="gd-goalie-tiles"></div>
       </div>
     </div>
   </div>
@@ -2014,10 +2030,17 @@ function renderGameDashboard(id){
     return {...p, _num: rPlayer ? (parseInt(rPlayer.num)||9999) : 9999, _numStr: rPlayer ? (rPlayer.num||'—') : '—'};
   }).filter(p=>p.name).sort((a,b)=>a._num-b._num);
 
+  const _isGoalie=p=>{
+    const r=roster.find(x=>x.name===p.name);
+    return (r&&r.pos==='Goalie')||(p.sv!==undefined&&p.g===undefined&&p.a===undefined&&p.p===undefined);
+  };
+  const skaters=ps.filter(p=>!_isGoalie(p));
+  const goalies=ps.filter(_isGoalie);
+
   const tbody=document.getElementById('gd-player-body');
   tbody.innerHTML='';
   let totG=0,totA=0,totP=0;
-  ps.forEach(p=>{
+  skaters.forEach(p=>{
     totG+=(p.g||0);totA+=(p.a||0);totP+=(p.p||0);
     tbody.innerHTML+=`<tr>
       <td style="font-weight:800;color:#1a3a6b">${p._numStr}</td>
@@ -2027,6 +2050,28 @@ function renderGameDashboard(id){
     </tr>`;
   });
   tbody.innerHTML+=`<tr class="tbl-total"><td></td><td>Team Total</td><td>${totG}</td><td>${totA}</td><td>${totP}</td><td>${totG+totA}</td></tr>`;
+
+  // Goalie metrics — separate from skater stats
+  const gCard=document.getElementById('gd-goalie-card');
+  const played=goalies.filter(p=>(p.sv||0)>0);
+  const shown=played.length?played:[];
+  if(shown.length){
+    const sv=shown.reduce((s,p)=>s+(p.sv||0),0);
+    const faced=sv+ga;
+    const svp=faced>0?Math.round(sv/faced*1000)/10:null;
+    const who=shown.map(p=>`${p._numStr&&p._numStr!=='—'?'#'+p._numStr+' ':''}${p.name}`);
+    document.getElementById('gd-goalie-who').textContent=shown.length>1
+      ? 'Saves by goalie: '+shown.map((p,i)=>`${who[i]} ${p.sv}`).join(' · ')
+      : who[0];
+    document.getElementById('gd-goalie-tiles').innerHTML=`
+      <div class="gl-tile"><div class="gl-val">${sv}</div><div class="gl-lbl">Saves</div></div>
+      <div class="gl-tile"><div class="gl-val">${ga}</div><div class="gl-lbl">Goals Against</div></div>
+      <div class="gl-tile"><div class="gl-val">${faced}</div><div class="gl-lbl">Shots Faced</div></div>
+      <div class="gl-tile key"><div class="gl-val">${svp===null?'—':svp.toFixed(1)+'%'}</div><div class="gl-lbl">Save %</div></div>`;
+    gCard.style.display='block';
+  } else {
+    gCard.style.display='none';
+  }
 
   // Period breakdown
   const periods=['1st Period','2nd Period','3rd Period'];
@@ -2112,23 +2157,36 @@ function renderGameDashboard(id){
       });
     }
 
-    // Goals & Assists by Player (vertical)
-    const activePSorted = ps.filter(p=>(p.g||0)+(p.a||0)+(p.p||0)>0).slice(0,8);
-    if(activePSorted.length){
+    // Goals, Assists & Passes by Player — ALL skaters (goalies are tracked by saves, not skater stats)
+    const inner=document.getElementById('gd-players-inner');
+    if(skaters.length){
       const pc=document.getElementById('gd-chart-players').getContext('2d');
       gdCharts.players=new Chart(pc,{type:'bar',
         data:{
-          labels:activePSorted.map(p=>p.name.split(' ')[0]),
+          labels:skaters.map(p=>(p._numStr&&p._numStr!=='—'?'#'+p._numStr+' ':'')+p.name.split(' ')[0]),
           datasets:[
-            {label:'Goals',data:activePSorted.map(p=>p.g||0),backgroundColor:'#2255a0',borderRadius:3},
-            {label:'Assists',data:activePSorted.map(p=>p.a||0),backgroundColor:'#4caf50',borderRadius:3},
-            {label:'Passes',data:activePSorted.map(p=>p.p||0),backgroundColor:'#f9a825',borderRadius:3}
+            {label:'Goals',data:skaters.map(p=>p.g||0),backgroundColor:'#184898',borderRadius:3,barPercentage:1,categoryPercentage:0.92},
+            {label:'Assists',data:skaters.map(p=>p.a||0),backgroundColor:'#1E7A44',borderRadius:3,barPercentage:1,categoryPercentage:0.92},
+            {label:'Passes',data:skaters.map(p=>p.p||0),backgroundColor:'#A8B2BA',borderRadius:3,barPercentage:1,categoryPercentage:0.92}
           ]
         },
         options:{responsive:true,maintainAspectRatio:false,
           plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:10}}}},
-          scales:{x:{stacked:false},y:{beginAtZero:true,ticks:{stepSize:1}}}},
-        plugins:[datalabelPlugin]
+          layout:{padding:{top:16}},
+          scales:{x:{stacked:false,offset:true,grid:{display:true,color:'#D5DAE0',lineWidth:1,drawTicks:false},border:{display:false},ticks:{font:{size:10,weight:'700'},color:'#183868',minRotation:90,maxRotation:90,autoSkip:false}},
+                  y:{beginAtZero:true,ticks:{stepSize:1,precision:0}}}},
+        plugins:[{id:'gdPlayerNums',afterDatasetsDraw(chart){
+          const ctx=chart.ctx;
+          chart.data.datasets.forEach((ds,di)=>{
+            const meta=chart.getDatasetMeta(di); if(meta.hidden) return;
+            meta.data.forEach((el,ii)=>{
+              const val=ds.data[ii]; if(!val) return;
+              ctx.save(); ctx.font='bold 9px sans-serif'; ctx.fillStyle='#333';
+              ctx.textAlign='center'; ctx.textBaseline='bottom';
+              ctx.fillText(val,el.x,el.y-2); ctx.restore();
+            });
+          });
+        }}]
       });
     }
   }
@@ -2231,6 +2289,11 @@ function buildDashboard(){
       scales:{x:{stacked:true,display:false},y:{stacked:true,display:false}}}
   });
 
+  // Season totals from player stats (must be defined BEFORE the metric tiles use them)
+  const totPasses=Object.values(playerTotals).reduce((s,p)=>s+(p.p||0),0);
+  const totGoals=Object.values(playerTotals).reduce((s,p)=>s+(p.g||0),0);
+  const totAssists=Object.values(playerTotals).reduce((s,p)=>s+(p.a||0),0);
+
   // Metrics — cumulative season averages
   // FOR stats: good=green, bad=red  |  AGAINST stats: good=green (low), bad=red (high)
   const metrics=[
@@ -2254,9 +2317,6 @@ function buildDashboard(){
 
   // Leaderboards — season totals from all games
   // Player totals also include passes
-  const totPasses=Object.values(playerTotals).reduce((s,p)=>s+(p.p||0),0);
-  const totGoals=Object.values(playerTotals).reduce((s,p)=>s+(p.g||0),0);
-  const totAssists=Object.values(playerTotals).reduce((s,p)=>s+(p.a||0),0);
 
   const allPlayers=Object.values(playerTotals).sort((a,b)=>b.g-a.g);
   const sorted_g=allPlayers.slice(0,5);
